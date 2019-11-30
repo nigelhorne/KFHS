@@ -6,8 +6,27 @@ use autodie qw(:all);
 use Data::Dumper;
 
 # CD17/cantmar.pdf
-
 # run pdftotext cantmar.pdf
+
+my %churches = (
+	'AND' => 'St Andrew',
+	'ALP' => 'St Alphage',
+	'BDN' => 'St Mary Bredin',
+	'BMN' => 'St Mary Bredman',
+	'DUN' => 'St Dunstan',
+	'GEO' => 'St George',
+	'GRY' => 'St Gregory',
+	'HYX' => 'Holy Cross',
+	'MAG' => 'St Mary Magdalene',
+	'MIL' => 'St Mildred',
+	'MRG' => 'St Margaret',
+	'MTN' => 'St Martin',
+	'NGT' => 'St Mary Northgate',
+	'PTR' => 'St Peter',
+	'PAU' => 'St Paul',
+	'STS' => 'All Saints'
+);
+
 open(my $fin, '<', 'cantmar.txt');
 my $inheader = 1;
 my $mode;
@@ -39,16 +58,17 @@ while (my $line = <$fin>) {
 		$index = 0;
 	} elsif($line =~ /MARRIAGE Index/i) {
 		$mode = 'name';
-		# print Data::Dumper->new([\@Data])->Dump();
+		# print Data::Dumper->new([\@data])->Dump();
 		while(my $row = shift(@data)) {
 			next if($see && !defined($row->{'name'}));
 			die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 4);
-			print $row->{'name'}, ', ',
-				$row->{'spouse'}, ', ',
-				$row->{'date'}, ', ',
-				$row->{'church'}, "\n";
+			if(my $church = $churches{$row->{'church'}}) {
+				print "marriage, ", $row->{'name'}, ', ',
+					$row->{'spouse'}, ', ',
+					$row->{'date'}, ', ',
+					"$church\n";
+			}
 		}
-		# @data = ();
 		$index = 0;
 		$ignore = 0;
 	} else {
@@ -84,16 +104,22 @@ while (my $line = <$fin>) {
 				$ignore = 0;
 				next;
 			}
+		} else {
+			die $mode;
 		}
 
 		if($line eq 'Name') {
 			$mode = 'name';
 			while(my $row = shift(@data)) {
 				die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
-				print $row->{'name'}, ', ',
-					$row->{'spouse'}, ', ',
-					$row->{'date'}, ', ',
-					$row->{'church'}, "\n";
+				if(my $church = $churches{$row->{'church'}}) {
+					print "marriage, ", $row->{'name'}, ', ',
+						$row->{'spouse'}, ', ',
+						$row->{'date'}, ', ',
+						"$church\n";
+				} else {
+					die Data::Dumper->new([$row])->Dump();
+				}
 			}
 			$ignore = 0;
 			$index = 0;
@@ -116,5 +142,17 @@ while (my $line = <$fin>) {
 			$data[$index++]->{$mode} = $line;
 			#print "$mode: $line\n";
 		}
+	}
+}
+
+while(my $row = shift(@data)) {
+	die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
+	if(my $church = $churches{$row->{'church'}}) {
+		print "marriage, ", $row->{'name'}, ', ',
+			$row->{'spouse'}, ', ',
+			$row->{'date'}, ', ',
+			"$church\n";
+	} else {
+		die Data::Dumper->new([$row])->Dump();
 	}
 }

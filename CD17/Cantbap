@@ -1,0 +1,184 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use autodie qw(:all);
+use Data::Dumper;
+
+# CD17/Cantbap.pdf
+# run pdftotext Cantbap.pdf
+
+my %churches = (
+	'AND' => 'St Andrew',
+	'ALP' => 'St Alphage',
+	'BDN' => 'St Mary Bredin',
+	'BMN' => 'St Mary Bredman',
+	'CHR' => 'Christchurch',
+	'DUN' => 'St Dunstan',
+	'GEO' => 'St George',
+	'GRY' => 'St Gregory',
+	'HYX' => 'Holy Cross',
+	'MAG' => 'St Mary Magdalene',
+	'MIL' => 'St Mildred',
+	'MRG' => 'St Margaret',
+	'MTN' => 'St Martin',
+	'NGT' => 'St Mary Northgate',
+	'PTR' => 'St Peter',
+	'PAU' => 'St Paul',
+	'STS' => 'All Saints',
+	'WAL' => 'Walloon Church',
+);
+
+open(my $fin, '<', 'Cantbap.txt');
+my $inheader = 1;
+my $mode;
+my @data;
+my $index = 0;
+my $see = 0;
+while (my $line = <$fin>) {
+	chomp $line;
+
+	if($line eq 'NAME') {
+		$inheader = 0;
+		$mode = 'name';
+		next;
+	}
+	next if($inheader);
+	next if($line =~ /^Page \d.+\d$/);
+	next if($line =~ /^/);
+
+	if(length($line) == 0) {
+		if($mode eq 'name') {
+			$mode = 'date';
+		} elsif($mode eq 'date') {
+			$mode = 'parents';
+		} elsif($mode eq 'parents') {
+			$mode = 'church';
+		}
+		$index = 0;
+	} elsif($line =~ /Index of BAPTISMS/i) {
+		$mode = 'name';
+		# print Data::Dumper->new([\@data])->Dump();
+		while(my $row = shift(@data)) {
+			next if($see-- && !defined($row->{'name'}));
+			if(defined($row->{'church'})) {
+				die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 4);
+				if(my $church = $churches{$row->{'church'}}) {
+					print "baptism, ", $row->{'name'}, ', ',
+						$row->{'parents'}, ', ',
+						$row->{'date'}, ', ',
+						"$church\n";
+				}
+			} else {
+				print "baptism, ", $row->{'name'}, ', ',
+					$row->{'parents'}, ', ',
+					$row->{'date'}, ', ',
+					"???\n";
+			}
+		}
+		$index = 0;
+	} else {
+		if($mode eq 'name') {
+			if($line =~ /^[A-Z]+\ssee\s[A-Z]+/) {
+				$see++;
+				next;
+			}
+			$see = 0;
+			if(($line =~ /(.+)\-[\-\?]+(.+)/) && ($line !~ /^\*/) && ($line !~ /\?\s/) && ($line !~ /\?$/)) {
+				$data[$index++]->{'name'} = $1;
+				$data[$index++]->{'name'} = $2;
+				next;
+			}
+		} elsif($mode eq 'parents') {
+			if($line =~ /^(\-+)(\s)(\-+)(\s)(\-+)([A-Z].+)$/i) {
+				$data[$index++]->{'parents'} = $1;
+				$data[$index++]->{'parents'} = $3;
+				$data[$index++]->{'parents'} = $6;
+				next;
+			}
+			if($line =~ /(\-+)([A-Z].+)$/i) {
+				$data[$index++]->{'parents'} = $1;
+				$data[$index++]->{'parents'} = $2;
+				next;
+			}
+			$line =~ s/^[-\.\s]+//g;
+		} elsif($mode eq 'date') {
+			if($line =~ /^(--.--.---)(--.--.---)(.+)/) {
+				$data[$index++]->{'date'} = $1;
+				$data[$index++]->{'date'} = $2;
+				$data[$index++]->{'date'} = $3;
+				next;
+			}
+			if($line =~ /^(--.--.---.)(.+)/) {
+				$data[$index++]->{'date'} = $1;
+				$data[$index++]->{'date'} = $2;
+				next;
+			}
+			# $line =~ s/^--\.--\.---//;
+		} elsif($mode ne 'church') {
+			die $mode;
+		}
+
+		if($line eq 'NAME') {
+			$mode = 'name';
+			while(my $row = shift(@data)) {
+				die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
+				if(my $church = $churches{$row->{'church'}}) {
+					print "baptism, ", $row->{'name'}, ', ',
+					$row->{'parents'}, ', ',
+					$row->{'date'}, ', ',
+					"$church\n";
+				} else {
+					die Data::Dumper->new([$row])->Dump();
+				}
+			}
+			$index = 0;
+		} elsif($line eq 'DATE') {
+			$mode = 'date';
+			$index = 0;
+		} elsif($line eq 'PARENTS') {
+			$mode = 'parents';
+			$index = 0;
+		} elsif($line eq 'CHURCH') {
+			$mode = 'church';
+			$index = 0;
+		} else {
+			if(($line =~ /^\d\d\.\d\d\.\d\d\d\d$/) && ($mode ne 'date')) {
+				# die "$mode: $line";
+				warn "$mode: $line";
+				$data[$index++]->{'date'} = $line;
+			} elsif(($mode eq 'date') && ($line !~ /^[\d\-\.\*\s]+T?$/)) {
+				if($line =~ /^([\d\.]+)\s([A-Z].+)$/i) {
+					$data[$index]->{'date'} = $1;
+					$data[$index++]->{'parents'} = $2;
+				} else {
+					die "$mode: $line";
+				}
+			} elsif(($mode eq 'parents') && ($line =~ /^([\d\.]+)+\s(.+)$/)) {
+				$data[$index]->{'date'} = $1;
+				$data[$index++]->{'parents'} = $2;
+			} elsif(($mode eq 'church') && !defined($churches{$line})) {
+				if($line =~ /^Rev /) {
+					$data[$index]->{'parents'} = $line;
+				} else {
+					die $line;
+				}
+			} else {
+				$data[$index++]->{$mode} = $line;
+				#print "$mode: $line\n";
+			}
+		}
+	}
+}
+
+while(my $row = shift(@data)) {
+	die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
+	if(my $church = $churches{$row->{'church'}}) {
+		print "baptism, ", $row->{'name'}, ', ',
+		$row->{'parents'}, ', ',
+		$row->{'date'}, ', ',
+		"$church\n";
+	} else {
+		die Data::Dumper->new([$row])->Dump();
+	}
+}
