@@ -72,6 +72,7 @@ while (my $line = <$fin>) {
 						"$church\n";
 				}
 			} else {
+				die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 3);
 				print "baptism, ", $row->{'name'}, ', ',
 					$row->{'parents'}, ', ',
 					$row->{'date'}, ', ',
@@ -98,6 +99,11 @@ while (my $line = <$fin>) {
 			if($line =~ /^([A-Z]+\-+[A-Z]+)\s([A-Z]+)$/i) {
 				# Gi--gie Ann
 				$data[$index++]->{'name'} = "$1 $2";
+				next;
+			}
+			if($line =~ /^([A-Z]+)\s\-+\([A-Z]+/i) {
+				# Hollands --------(son)
+				$data[$index++]->{'name'} = $1;
 				next;
 			}
 			if(($line =~ /(.+)\-[\-\?]+(.+)/) && ($line !~ /^\*/) && ($line !~ /\?\s/) && ($line !~ /\?$/)) {
