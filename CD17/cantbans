@@ -5,8 +5,8 @@ use warnings;
 use autodie qw(:all);
 use Data::Dumper;
 
-# CD17/cantbur.pdf
-# run pdftotext cantbur.pdf
+# CD17/cantbans.pdf
+# run pdftotext cantbans.pdf
 
 my %churches = (
 	'AND' => 'St Andrew',
@@ -29,13 +29,14 @@ my %churches = (
 	'WAL' => 'Walloon Church',
 );
 
-open(my $fin, '<', 'cantbur.txt');
+$SIG{__WARN__} = sub { die @_ };
+
+open(my $fin, '<', 'cantbans.txt');
 my $inheader = 1;
 my $mode;
 my @data;
 my $index = 0;
 my $see = 0;
-my $save_index = undef;
 while (my $line = <$fin>) {
 	chomp $line;
 
@@ -45,6 +46,7 @@ while (my $line = <$fin>) {
 		next;
 	}
 	next if($inheader);
+	next if($line eq 'B');
 	next if($line =~ /^Page \d.+\d$/);
 	next if($line =~ /^/);
 
@@ -52,36 +54,39 @@ while (my $line = <$fin>) {
 		if($mode eq 'name') {
 			$mode = 'date';
 		} elsif($mode eq 'date') {
-			$mode = 'age';
-		} elsif($mode eq 'age') {
-			$mode = 'abode';
-			$save_index = $index;
-		} elsif($mode eq 'abode') {
+			$mode = 'spouse';
+		} elsif($mode eq 'spouse') {
 			$mode = 'church';
 		}
 		$index = 0;
-	} elsif($line =~ /Burial Index/i) {
+	} elsif($line =~ /BANNS Index/i) {
 		$mode = 'name';
 		# print Data::Dumper->new([\@data])->Dump();
 		while(my $row = shift(@data)) {
 			next if($see-- && !defined($row->{'name'}));
-			die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 5);
+			die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 4);
+			die Data::Dumper->new([$row])->Dump() if(!defined($row->{'church'}));
 			if(my $church = $churches{$row->{'church'}}) {
-				print "burial, ", $row->{'name'}, ', ',
+				print "banns, ", $row->{'name'}, ', ',
 					$row->{'date'}, ', ',
-					$row->{'age'}, ', ',
-					$row->{'abode'}, ', ',
+					$row->{'spouse'}, ', ',
 					"$church\n";
 			}
 		}
 		$index = 0;
 	} else {
 		if($mode eq 'name') {
-			if($line =~ /^[A-Z]+\ssee\s[A-Z]+/) {
+			if($line =~ /^[A-Z]+\ssee\s[A-Z]+/i) {
 				$see++;
 				next;
 			}
 			$see = 0;
+			$line =~ s/^\*[\s\-]+//;
+			if($line =~ /^([A-Z]+)\-\-+(.+)/) {
+				$data[$index++]->{'name'} = $1;
+				$data[$index++]->{'name'} = $2;
+				next;
+			}
 		} elsif($mode eq 'date') {
 			if($line =~ /^(--.--.---)(--.--.---)(.+)/) {
 				$data[$index++]->{'date'} = $1;
@@ -95,16 +100,26 @@ while (my $line = <$fin>) {
 				next;
 			}
 			# $line =~ s/^--\.--\.---//;
+		} elsif($mode eq 'spouse') {
+			if($line =~ /^([\-\s?]+)([A-Z].+)$/) {
+				$data[$index++]->{'spouse'} = $1;
+				$data[$index++]->{'spouse'} = $2;
+				next;
+			}
+			if($line =~ /^([A-Z]+)\s\-+([A-Z\s]+)/i) {
+				$data[$index++]->{'spouse'} = $1;
+				$data[$index++]->{'spouse'} = $2;
+				next;
+			}
 		}
 
 		if($line eq 'Name') {
 			while(my $row = shift(@data)) {
-				die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 5);
+				die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
 				if(my $church = $churches{$row->{'church'}}) {
-					print "burial, ", $row->{'name'}, ', ',
+					print "banns, ", $row->{'name'}, ', ',
 						$row->{'date'}, ', ',
-						$row->{'age'}, ', ',
-						$row->{'abode'}, ', ',
+						$row->{'spouse'}, ', ',
 						"$church\n";
 				} else {
 					die Data::Dumper->new([$row])->Dump();
@@ -115,37 +130,36 @@ while (my $line = <$fin>) {
 		} elsif($line eq 'Date') {
 			$mode = 'date';
 			$index = 0;
-		} elsif($line eq 'Age') {
-			$mode = 'age';
-			$index = 0;
-		} elsif($line eq 'Abode') {
-			$mode = 'abode';
+		} elsif($line eq 'Intended Spouse') {
+			$mode = 'spouse';
 			$index = 0;
 		} elsif($line eq 'Church') {
 			$mode = 'church';
 			$index = 0;
 		} else {
-			if($line eq 'Infant') {
-				$mode = 'age';
-				if(defined($save_index) && defined($data[$save_index - 1]{'age'}) &&
-				  ($data[$save_index - 1]{'age'} =~ /^17/)) {
-					$index = $save_index;
-					$save_index = undef;
-				}
-			}
 			if(($line =~ /^\d\d\.\d\d\.\d\d\d\d$/) && ($mode ne 'date')) {
 				die "$mode: $line";
 				$data[$index++]->{'date'} = $line;
-			} elsif(($mode eq 'date') && ($line !~ /^[\d\-\.\?\s]+$/)) {
+			} elsif(($mode eq 'date') && ($line !~ /^[\d\-\.\?\s]+\*?$/)) {
 				die "$mode: $line";
-			} elsif(($mode eq 'abode') && ($line =~ /^([A-Z\s]+)\-+(.+)$/i)) {
-				$data[$index++]->{'abode'} = $1;
-				$data[$index++]->{'abode'} = $2;
-			} elsif(($mode eq 'abode') && ($line =~ /^(\d+\s[YM])+\s(.+)$/)) {
-				$data[$index]->{'age'} = $1;
-				$data[$index++]->{'abode'} = $2;
-			} elsif(($mode eq 'church') && !defined($churches{$line})) {
-				die $line;
+			} elsif($mode eq 'abode') {
+				if($line =~ /^([A-Z\s]+)\-+(.+)$/i) {
+					$data[$index++]->{'abode'} = $1;
+					$data[$index++]->{'abode'} = $2;
+				} elsif($line =~ /^(\d+\s[YM])+\s(.+)$/) {
+					$data[$index]->{'age'} = $1;
+					$data[$index++]->{'abode'} = $2;
+				}
+			} elsif($mode eq 'church') {
+				$line =~ s/^B\s//;
+				if(defined($churches{$line})) {
+					$data[$index++]->{'church'} = $line;
+				} elsif($line =~ /^(\-\-\-?)([A-Z]{3})$/) {
+					$data[$index++]->{'church'} = $1;
+					$data[$index++]->{'church'} = $2;
+				} elsif($line ne '---') {
+					die $line;
+				}
 			} else {
 				$data[$index++]->{$mode} = $line;
 				# print "$mode: $line\n";
@@ -155,12 +169,11 @@ while (my $line = <$fin>) {
 }
 
 while(my $row = shift(@data)) {
-	die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 5);
+	die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
 	if(my $church = $churches{$row->{'church'}}) {
-		print "burial, ", $row->{'name'}, ', ',
+		print "banns, ", $row->{'name'}, ', ',
 			$row->{'date'}, ', ',
-			$row->{'age'}, ', ',
-			$row->{'abode'}, ', ',
+			$row->{'spouse'}, ', ',
 			"$church\n";
 	} else {
 		die Data::Dumper->new([$row])->Dump();
