@@ -1,0 +1,25 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use autodie qw(:all);
+use DBI;
+
+my $dbh = DBI->connect("dbi:SQLite:dbname=cd17.sql", undef, undef, { RaiseError => 1, AutoCommit => 0, synchronous => 0, locking_mode => 'EXCLUSIVE' });
+if($dbh) {
+	$dbh->do('PRAGMA cache_size = -65536');	# 64MB
+	$dbh->do('PRAGMA journal_mode = OFF');
+}
+
+$dbh->do('CREATE TABLE kfhs(cd CHAR(4), type VARCHAR, church VARCHAR, name VARCHAR, date VARCHAR)');
+
+if(open(my $pin, '-|', './Cantbap')) {
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, name, date) VALUES(?, ?, ?, ?)');
+	while(my $line = <$pin>) {
+		chomp $line;
+		my ($entry, $name, $parents, $date, $church) = split(/, /, $line);
+		# print "$entry->$name\n";
+		$sth->execute('CD17', 'baptism', $name, $date);
+	}
+}
+$dbh->disconnect() if($dbh);

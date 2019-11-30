@@ -27,6 +27,8 @@ my %churches = (
 	'STS' => 'All Saints'
 );
 
+$SIG{__WARN__} = sub { die @_ };
+
 open(my $fin, '<', 'cantmar.txt');
 my $inheader = 1;
 my $mode;

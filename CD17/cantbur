@@ -29,6 +29,8 @@ my %churches = (
 	'WAL' => 'Walloon Church',
 );
 
+$SIG{__WARN__} = sub { die @_ };
+
 open(my $fin, '<', 'cantbur.txt');
 my $inheader = 1;
 my $mode;

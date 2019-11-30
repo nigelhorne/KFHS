@@ -29,6 +29,8 @@ my %churches = (
 	'WAL' => 'Walloon Church',
 );
 
+$SIG{__WARN__} = sub { die @_ };
+
 open(my $fin, '<', 'Cantbap.txt');
 my $inheader = 1;
 my $mode;
@@ -84,7 +86,27 @@ while (my $line = <$fin>) {
 				next;
 			}
 			$see = 0;
+			if($line =~ /^([A-Z]\-+[A-Z]+\s[A-Z]+)$/i) {
+				$data[$index++]->{'name'} = $1;
+				next;
+			}
+			if($line =~ /^([A-Z]+)\-+\s([A-Z]+)$/i) {
+				# Garn--- James
+				$data[$index++]->{'name'} = "$1 $2";
+				next;
+			}
+			if($line =~ /^([A-Z]+\-+[A-Z]+)\s([A-Z]+)$/i) {
+				# Gi--gie Ann
+				$data[$index++]->{'name'} = "$1 $2";
+				next;
+			}
 			if(($line =~ /(.+)\-[\-\?]+(.+)/) && ($line !~ /^\*/) && ($line !~ /\?\s/) && ($line !~ /\?$/)) {
+				$data[$index++]->{'name'} = $1;
+				$data[$index++]->{'name'} = $2;
+				next;
+			}
+			if($line =~ /^([A-Z\s\&]+)\-+([A-Z\s\&]+)$/) {
+				# William & E-----William & Martha
 				$data[$index++]->{'name'} = $1;
 				$data[$index++]->{'name'} = $2;
 				next;
@@ -109,7 +131,7 @@ while (my $line = <$fin>) {
 				$data[$index++]->{'date'} = $3;
 				next;
 			}
-			if($line =~ /^(--.--.---.)(.+)/) {
+			if($line =~ /^(--.--.---\.?)(.+)/) {
 				$data[$index++]->{'date'} = $1;
 				$data[$index++]->{'date'} = $2;
 				next;
@@ -145,7 +167,13 @@ while (my $line = <$fin>) {
 		} else {
 			if(($line =~ /^\d\d\.\d\d\.\d\d\d\d$/) && ($mode ne 'date')) {
 				# die "$mode: $line";
-				warn "$mode: $line";
+				# warn "$mode: $line";
+				if($data[$index + 2]) {
+					$data[$index + 2]->{'date'} = $data[$index + 1]->{'date'};
+				}
+				if($data[$index + 1]) {
+					$data[$index + 1]->{'date'} = $data[$index]->{'date'};
+				}
 				$data[$index++]->{'date'} = $line;
 			} elsif(($mode eq 'date') && ($line !~ /^[\d\-\.\*\s]+T?$/)) {
 				if($line =~ /^([\d\.]+)\s([A-Z].+)$/i) {
@@ -159,7 +187,7 @@ while (my $line = <$fin>) {
 				$data[$index++]->{'parents'} = $2;
 			} elsif(($mode eq 'church') && !defined($churches{$line})) {
 				if($line =~ /^Rev /) {
-					$data[$index]->{'parents'} = $line;
+					$data[$index++]->{'parents'} = $line;
 				} else {
 					die $line;
 				}
