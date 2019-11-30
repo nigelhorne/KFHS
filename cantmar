@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use autodie qw(:all);
+use Data::Dumper;
+
+# CD17/cantmar.pdf
+
+# run pdftotext cantmar.pdf
+open(my $fin, '<', 'cantmar.txt');
+my $inheader = 1;
+my $mode;
+my @data;
+my $index = 0;
+my $see = 0;
+my $ignore;
+while (my $line = <$fin>) {
+	chomp $line;
+
+	if($line eq 'Name') {
+		$inheader = 0;
+		$mode = 'name';
+		next;
+	}
+	next if($inheader);
+	next if($line eq 'M');
+	next if($line =~ /^Page \d.+\d$/);
+	next if($line =~ /^/);
+
+	if(length($line) == 0) {
+		if($mode eq 'name') {
+			$mode = 'date';
+		} elsif($mode eq 'date') {
+			$mode = 'spouse';
+		} elsif($mode eq 'spouse') {
+			$mode = 'church';
+		}
+		$index = 0;
+	} elsif($line =~ /MARRIAGE Index/i) {
+		$mode = 'name';
+		# print Data::Dumper->new([\@Data])->Dump();
+		while(my $row = shift(@data)) {
+			next if($see && !defined($row->{'name'}));
+			die Data::Dumper->new([$row])->Dump() if(keys %{$row} != 4);
+			print $row->{'name'}, ', ',
+				$row->{'spouse'}, ', ',
+				$row->{'date'}, ', ',
+				$row->{'church'}, "\n";
+		}
+		# @data = ();
+		$index = 0;
+		$ignore = 0;
+	} else {
+		if($mode eq 'name') {
+			if($line =~ /^[A-Z]+\ssee\s[A-Z]+/) {
+				$ignore = $see = $index + 1;
+				next;
+			}
+			$see = 0;
+			if($line =~ /(.+)\-\-+(.+)/) {
+				$data[$index++]->{'name'} = $1;
+				$data[$index++]->{'name'} = $2;
+				next;
+			} elsif($line =~ /(.+) \(see reg ([A-Z].+)/) {
+				$data[$index++]->{'name'} = $1;
+				if($2 ne 'May 1915)') {
+					$data[$index++]->{'name'} = $2;
+				}
+				next;
+			}
+		} elsif($mode eq 'spouse') {
+			if($line =~ /([A-Z].+)\-\-\-+([A-Z].+)/) {
+				$data[$index++]->{'spouse'} = $1;
+				$data[$index++]->{'spouse'} = $2;
+				next;
+			}
+			$line =~ s/^[-\.\s]+//g;
+		} elsif($mode eq 'date') {
+			next if($line eq '--.--.----.');
+			$line =~ s/^--\.--\.---//;
+		} elsif($mode eq 'church') {
+			if($ignore && ($index == ($ignore - 1)) && ($line !~ /^\-/)) {
+				$ignore = 0;
+				next;
+			}
+		}
+
+		if($line eq 'Name') {
+			$mode = 'name';
+			while(my $row = shift(@data)) {
+				die Data::Dumper->new([$row])->Dump() if(scalar keys %{$row} != 4);
+				print $row->{'name'}, ', ',
+					$row->{'spouse'}, ', ',
+					$row->{'date'}, ', ',
+					$row->{'church'}, "\n";
+			}
+			$ignore = 0;
+			$index = 0;
+		} elsif($line eq 'Date') {
+			$mode = 'date';
+			$index = 0;
+		} elsif($line eq 'Spouse') {
+			$mode = 'spouse';
+			$index = 0;
+		} elsif($line eq 'Church') {
+			$mode = 'church';
+			$index = 0;
+		} else {
+			if(($line =~ /^\d\d\.\d\d\.\d\d\d\d$/) && ($mode ne 'date')) {
+				die "$mode: $line";
+			}
+			if(($mode eq 'date') && ($line !~ /^[\d\-\.\*]+$/)) {
+				die "$mode: $line";
+			}
+			$data[$index++]->{$mode} = $line;
+			#print "$mode: $line\n";
+		}
+	}
+}
