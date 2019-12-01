@@ -14,12 +14,12 @@ if($dbh) {
 $dbh->do('CREATE TABLE kfhs(cd CHAR(4), type VARCHAR, church VARCHAR, name VARCHAR, date VARCHAR)');
 
 if(open(my $pin, '-|', './Cantbap')) {
-	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, name, date) VALUES(?, ?, ?, ?)');
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name, date) VALUES(?, ?, ?, ?, ?)');
 	while(my $line = <$pin>) {
 		chomp $line;
 		my ($entry, $name, $parents, $date, $church) = split(/, /, $line);
 		# print "$entry->$name\n";
-		$sth->execute('CD17', 'baptism', $name, $date);
+		$sth->execute('CD17', 'baptism', $church, $name, $date);
 	}
 }
 $dbh->disconnect() if($dbh);
