@@ -15,13 +15,13 @@ my $dbh = DBI->connect('dbi:SQLite:dbname=' . DATABASE, undef, undef, { RaiseErr
 $dbh->do('PRAGMA cache_size = -65536');	# 64MB
 $dbh->do('PRAGMA journal_mode = OFF');
 
-$dbh->do('CREATE TABLE kfhs(cd NUMBER, type VARCHAR, church VARCHAR, name1 VARCHAR, name2 VARCHAR, date VARCHAR, age CHAR(5), abode VARCHAR)');
+$dbh->do('CREATE TABLE kfhs(entry VARCHAR, cd NUMBER, type VARCHAR, church VARCHAR, name2 VARCHAR, date VARCHAR, age CHAR(5), abode VARCHAR)');
 
 if(open(my $pin, '-|', './Cantbap')) {
-	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name1, date) VALUES(?, ?, ?, ?, ?)');
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, entry, date) VALUES(?, ?, ?, ?, ?)');
 	while(my $line = <$pin>) {
 		chomp $line;
-		my ($entry, $name, $parents, $date, $church) = split(/, /, $line);
+		my ($type, $name, $parents, $date, $church) = split(/, /, $line);
 		if($parents eq 'N.G.') {
 			$parents = 'NULL';
 		}
@@ -32,32 +32,32 @@ if(open(my $pin, '-|', './Cantbap')) {
 }
 
 if(open(my $pin, '-|', './cantbans')) {
-	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name1, name2, date) VALUES(?, ?, ?, ?, ?, ?)');
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, entry, name2, date) VALUES(?, ?, ?, ?, ?, ?)');
 	while(my $line = <$pin>) {
 		chomp $line;
-		my ($entry, $name1, $date, $name2, $church) = split(/, /, $line);
+		my ($type, $entry, $date, $name2, $church) = split(/, /, $line);
 		# print "$entry->$name\n";
-		$sth->execute(17, 'banns', $church, $name1, $name2, $date);
+		$sth->execute(17, 'banns', $church, $entry, $name2, $date);
 	}
 	close $pin;
 }
 
 if(open(my $pin, '-|', './cantmar')) {
-	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name1, name2, date) VALUES(?, ?, ?, ?, ?, ?)');
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, entry, name2, date) VALUES(?, ?, ?, ?, ?, ?)');
 	while(my $line = <$pin>) {
 		chomp $line;
-		my ($entry, $name1, $name2, $date, $church) = split(/, /, $line);
-		# print "$entry->$name1\n";
-		$sth->execute(17, 'marriage', $church, $name1, $name2, $date);
+		my ($type, $entry, $name2, $date, $church) = split(/, /, $line);
+		# print "$entry->$entry\n";
+		$sth->execute(17, 'marriage', $church, $entry, $name2, $date);
 	}
 	close $pin;
 }
 
 if(open(my $pin, '-|', './cantbur')) {
-	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name1, age, date) VALUES(?, ?, ?, ?, ?, ?)');
+	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, entry, age, date) VALUES(?, ?, ?, ?, ?, ?)');
 	while(my $line = <$pin>) {
 		chomp $line;
-		my ($entry, $name1, $date, $age, $abode, $church) = split(/, /, $line);
+		my ($type, $entry, $date, $age, $abode, $church) = split(/, /, $line);
 		if($age eq 'N.G.') {
 			$age = 'NULL';
 		}
@@ -65,7 +65,7 @@ if(open(my $pin, '-|', './cantbur')) {
 			$abode = 'NULL';
 		}
 		# print "$entry->$name\n";
-		$sth->execute(17, 'baptism', $church, $name1, $age, $date);
+		$sth->execute(17, 'burial', $church, $entry, $age, $date);
 	}
 	close $pin;
 }

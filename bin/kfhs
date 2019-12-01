@@ -1,0 +1,378 @@
+#!/usr/bin/env perl
+
+# Check the KFHS CDs for matches in a gedcom
+# Needs to be run in the same directory as the KHFS database "kfhs.sql"
+
+use warnings;
+use strict;
+use autodie qw(:all);
+
+no lib '.';
+
+my @modules;
+
+# Install Pre-requisites
+BEGIN {
+	@modules = (
+		'Gedcom', 'Lingua::EN::NameParse', 'Unicode::Diacritic::Strip',
+		'Lingua::EN::NameCase', 'File::pfopen', 'Error::Simple',
+		'Data::Dumper', 'Term::ANSIColor',
+	);
+	my @needfull;
+	foreach my $module(@modules) {
+		eval "use $module";
+		if($@) {
+			push @needfull, $module;
+		}
+	}
+	if(scalar(@needfull)) {
+		my $list = join(' ', @needfull);
+		print "Installing $list\n";
+		system("cpan -i $list");
+	}
+}
+
+foreach my $module(@modules) {
+	my $version;
+	if($module =~ /(.+)\s(.+)$/) {
+		$module = $1;
+		$version = $2;
+	}
+	if($module =~ /.+\/(.+)/) {
+		$module = $1;
+	}
+	eval "require $module";
+	if($@) {
+		die $@;
+	}
+	$module->import();
+	# if($version && ($module::VERSION < $version)) {
+		# die "$module: need $version got ", $module::VERSIOn;
+	# }
+}
+
+use lib '../lib';
+use KFHS::DB::kfhs;
+# use MyLogger;
+
+die "Usage: $0 gedcom\n" unless($ARGV[0]);
+
+my $gedcom = Gedcom->new(gedcom_file => $ARGV[0], read_only => 1);
+my $nameparser = Lingua::EN::NameParse->new(extended_titles => 1, initials => 1);
+# my $kfhs = KFHS::DB::kfhs->new(directory => '.', logger => MyLogger->new());
+my $kfhs = KFHS::DB::kfhs->new(directory => '.');
+# my $row = $foo->fetchrow_hashref(customer_id => '12345);
+# print Data::Dumper->new([$row])->Dump();
+
+my @everyone = $gedcom->individuals();
+
+while(my $person = shift(@everyone)) {
+	my $matches = $kfhs->selectall_hashref(entry => $person->as_string());
+	while(my $match = shift(@{$matches})) {
+		if(my $date = $match->{'date'}) {
+			if($date =~ /(\d{4})$/) {
+				$date = $1;
+
+				my $dob = dateofbirth($person);
+
+				my $yob;	# Year of birth
+				if($dob && ($dob =~ /(\d{4})$/)) {
+					$yob = $1;
+				} else {
+					$dob = get_value({ person => $person, value => 'baptism date' });
+					if($dob && ($dob =~ /.*?(\d{3,4})/)) {
+						$yob = $1;
+					}
+				}
+
+				next if($yob && ($date < $yob));
+
+				my $dod = dateofdeath($person);
+
+				my $yod;	# Year of death
+				if($dod && ($dod =~ /.*?(\d{3,4})/)) {
+					if($dod =~ /^(Abt|ca?)\.?\s*(.+)/i) {
+						my $year = $2;
+						if($year =~ /^[A-Z]{3}\s(.+)/i) {
+							$yod = $1;	# Get the "1951" from "Feb 1951"
+						} else {
+							$yod = $year;
+						}
+					} else {
+						$yod = $1;
+					}
+				} else {
+					$dod = get_value({ person => $person, value => 'burial date' });
+					if($dod && ($dod =~ /.*?(\d{3,4})/)) {
+						$yod = $1;
+					}
+				}
+
+				if($yod) {
+					next if($date > $yod);
+					next if($date < ($yod - 120));
+				}
+			}
+		}
+
+		print $person->as_string(include_years => 1), ': ',
+			Data::Dumper->new([$match])->Dump();
+	}
+}
+
+sub Gedcom::Individual::as_string
+{
+	my $self = shift;
+	my %args = (ref($_[0]) eq 'HASH') ? %{$_[0]} : @_;
+
+	my $name;
+
+	if($args{'use_aka'}) {
+		my $n2 = $self->tag_record('NAME', 2);
+		if(defined($n2) && (ref($n2) eq 'Gedcom::Record') && defined($n2->type()) && ($n2->type() eq 'AlsoKnownAs') && ($n2->value() ne $self->name())) {
+			$name = $n2->value();
+		} else {
+			return;
+		}
+	} else {
+		$name = $self->name();
+	}
+
+	$name =~ s/\///g;
+
+	# FIXME: Correctly handle other names, relies on Lingua::EN::NameParse
+	#	too much
+
+	$name = Unicode::Diacritic::Strip::strip_diacritics($name);
+	# $name =~ tr/čáň/can/;
+	# $name =~ s/č/c/g;
+	# $name =~ s/á/a/g;
+	# $name =~ s/ň/n/g;
+	$nameparser->parse($name);
+
+	my %name_components = $nameparser->components();
+	my $first_name = $name_components{'given_name_1'} // $name_components{'initials_1'};
+	my $middle_name = $name_components{'middle_name'};
+	my $surname = $name_components{'surname_1'};
+	if($name_components{'surname_2'}) {
+		$surname .= ' ' . $name_components{'surname_2'};
+	}
+	if($name_components{'non_matching'}) {
+		if($name =~ /(\w{2,})\s(\w{2,})\s(\w+)\s(\w{2,})/) {
+			# Name parser doesn't parse names like this very well
+			$first_name = $1;
+			$middle_name = "$2 $3";
+			$surname = $4;
+		} else {
+			if($surname) {
+				$surname .= ' ';
+			}
+			my $rest = $name_components{'non_matching'};
+			if($rest =~ /(.+) $/) {
+				$rest = $1;
+			}
+			$surname .= $rest;
+
+			# Remove the middle name, since it's come in from the non_matching
+			$middle_name = undef;
+			delete $args{'middle_names'};
+		}
+	} elsif(!defined($surname)) {
+		$surname = $self->surname();
+	}
+
+	my $has_maiden_name;
+	if($args{'nee'}) {
+		my $sex = get_value({ person => $self, value => 'sex' });
+		if(defined($sex) && ($sex eq 'F')) {
+			my @husbands = $self->husband();
+			if(my $husband = pop @husbands) {
+				$surname = $husband->surname();
+				$has_maiden_name = 1;
+			} elsif(my $spouse = $self->spouse()) {
+				die 'married, but no husband relationship';
+			}
+		}
+	}
+
+	my $rc;
+
+	if($args{'title'} && $name_components{'title_1'}) {
+		$rc = $name_components{'title_1'};
+		if($rc) {
+			$rc .= ' ';
+		}
+	}
+
+	if($first_name) {
+		$rc .= $first_name;
+	} elsif($self->given_names()) {
+		$rc .= $self->given_names();
+	} elsif($args{'print_unknown'}) {
+		$rc .= ' ?';
+	}
+
+	if($args{'middle_names'}) {
+		if($middle_name) {
+			$rc .= " $middle_name";
+		} elsif($name =~ /\s([A-Z])\s.+/) {
+			# Just an initial has been given
+			$rc .= " $1";
+		}
+	}
+
+	if($surname) {
+		if($rc) {
+			$rc .= ' ';
+		}
+		$rc .= normalize_name($surname);
+		if(my $suffix = $name_components{'suffix'}) {
+			$rc .= " $suffix";
+		}
+	} elsif($args{'print_unknown'}) {
+		$rc .= ' ?';
+	}
+
+	if($has_maiden_name && $self->surname()) {
+		$rc .= ' (nee ' . normalize_name($self->surname()) . ')';
+	}
+
+	if(!defined($rc)) {
+		die "Can't parse the name of '$name'";
+	}
+
+	if($args{'include_years'}) {
+		my $dob = dateofbirth($self);
+
+		my $yob;	# Year of birth
+		if($dob && ($dob =~ /.*?(\d{3,4})/)) {
+			if($dob =~ /^(Abt|ca?)\.?\s*(.+)/i) {
+				my $year = $2;
+				if($year =~ /^[A-Z]{3}\s(.+)/i) {
+					$yob = "c$1";	# Get the "1951" from "Feb 1951"
+				}
+				$yob = "c$year";
+			} else {
+				$yob = $1;
+			}
+		} else {
+			$dob = get_value({ person => $self, value => 'baptism date' });
+			if($dob && ($dob =~ /.*?(\d{3,4})/)) {
+				$yob = "c$1";
+			}
+		}
+
+		my $dod = dateofdeath($self);
+
+		my $yod;	# Year of death
+		if($dod && ($dod =~ /.*?(\d{3,4})/)) {
+			if($dod =~ /^(Abt|ca?)\.?\s*(.+)/i) {
+				my $year = $2;
+				if($year =~ /^[A-Z]{3}\s(.+)/i) {
+					$yod = "c$1";	# Get the "1951" from "Feb 1951"
+				} else {
+					$yod = "c$year";
+				}
+			} else {
+				$yod = $1;
+			}
+		} else {
+			$dod = get_value({ person => $self, value => 'burial date' });
+			if($dod && ($dod =~ /.*?(\d{3,4})/)) {
+				$yod = "c$1";
+			}
+		}
+
+		$rc .= ' ' if($yob || $yod);
+
+		if($yob) {
+			$rc .= "$yob ";
+		}
+
+		$rc .= '-' if($yob || $yod);
+
+		if($yod) {
+			return "$rc $yod";
+		}
+	}
+
+	if(!defined($rc)) {
+		die "Can't determine the name for record ", $self->xref();
+	}
+
+	$rc =~ tr/"/'/;	# fix issues with Graphviz and others - compatibility with ged2site
+
+	return $rc;
+}
+
+sub normalize_name
+{
+	# my $name = shift;
+
+	# my $rc;
+	# foreach my $word(split(/-| |'/, lc($name))) {
+		# $rc .= '-' if($rc && ($name =~ /-/));
+		# $rc .= "'" if($rc && ($name =~ /'/));
+		# $rc .= ' ' if($rc && ($name =~ / /));
+		# $rc .= ucfirst($word);
+	# }
+
+	# return $rc;
+
+	return Lingua::EN::NameCase::nc(shift);
+}
+
+sub dateofbirth {
+	my %params;
+
+	if(ref($_[0]) eq 'HASH') {
+		%params = %{$_[0]};
+	} elsif(scalar(@_) % 2 == 0) {
+		%params = @_;
+	} else {
+		$params{'person'} = shift;
+	}
+
+	my $person = $params{'person'};
+
+	my $dateofbirth = get_value({ person => $person, value => 'birth date' });
+	if((!defined($dateofbirth)) && (my $birth = $person->get_record('birth'))) {
+		return $birth->date();
+	}
+	return $dateofbirth;
+}
+
+sub dateofdeath {
+	my %params;
+
+	if(ref($_[0]) eq 'HASH') {
+		%params = %{$_[0]};
+	} elsif(scalar(@_) % 2 == 0) {
+		%params = @_;
+	} else {
+		$params{'person'} = shift;
+	}
+
+	my $person = $params{'person'};
+
+	my $dateofdeath = get_value({ person => $person, value => 'death date' });
+	if((!defined($dateofdeath)) && (my $death = $person->get_record('death'))) {
+		return $death->date();
+	}
+	return $dateofdeath;
+}
+
+sub get_value
+{
+	my %params = (ref($_[0]) eq 'HASH') ? %{$_[0]} : @_;
+
+	my $person = $params{'person'};
+	if(!defined($person)) {
+		my $i = 0;
+		while((my @call_details = caller($i++))) {
+			print STDERR "\t", colored($call_details[2] . ' of ' . $call_details[1], 'red'), "\n";
+		}
+		die 'BUG: person argument is mandatory';
+	}
+	return $params{'person'}->get_value($params{'value'});
+}
