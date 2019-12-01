@@ -101,8 +101,14 @@ while (my $line = <$fin>) {
 				$data[$index++]->{'name'} = "$1 $2";
 				next;
 			}
-			if($line =~ /^([A-Z]+)\s\-+\([A-Z]+/i) {
+			if($line =~ /^([A-Z]+)\s\-+\s?\([A-Z]+/i) {
 				# Hollands --------(son)
+				# Wilkins ------- (son)
+				$data[$index++]->{'name'} = $1;
+				next;
+			}
+			if($line =~ /^([A-Z\s]+)\s\(reg\..+\-\)$/i) {
+				# Simm Mary Ann (reg. Si----)
 				$data[$index++]->{'name'} = $1;
 				next;
 			}
