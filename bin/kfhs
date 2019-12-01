@@ -16,7 +16,7 @@ BEGIN {
 	@modules = (
 		'Gedcom', 'Lingua::EN::NameParse', 'Unicode::Diacritic::Strip',
 		'Lingua::EN::NameCase', 'File::pfopen', 'Error::Simple',
-		'Data::Dumper', 'Term::ANSIColor',
+		'Data::Dumper', 'Term::ANSIColor', 'Class::Simple::Readonly::Cached',
 	);
 	my @needfull;
 	foreach my $module(@modules) {
@@ -64,7 +64,7 @@ my $kfhs = KFHS::DB::kfhs->new(directory => '.');
 # my $row = $foo->fetchrow_hashref(customer_id => '12345);
 # print Data::Dumper->new([$row])->Dump();
 
-my @everyone = $gedcom->individuals();
+my @everyone = map { Class::Simple::Readonly::Cached->new({ object => $_, cache => {} }) } $gedcom->individuals();
 
 while(my $person = shift(@everyone)) {
 	my $matches = $kfhs->selectall_hashref(entry => $person->as_string());
@@ -115,7 +115,7 @@ while(my $person = shift(@everyone)) {
 			}
 		}
 
-		print $person->as_string(include_years => 1), ': ',
+		print $person->as_string(include_years => 1, middle_names => 1), ': ',
 			Data::Dumper->new([$match])->Dump();
 	}
 }
