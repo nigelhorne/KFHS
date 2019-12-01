@@ -5,15 +5,17 @@ use warnings;
 use autodie qw(:all);
 use DBI;
 
-if(-r 'cd17.sql') {
-	unlink 'cd17.sql';
+use constant { DATABASE => '../kfhs.sql' };
+
+if(-r DATABASE) {
+	unlink DATABASE;
 }
 
-my $dbh = DBI->connect("dbi:SQLite:dbname=cd17.sql", undef, undef, { RaiseError => 1, AutoCommit => 1,synchronous => 0, locking_mode => 'EXCLUSIVE' });
+my $dbh = DBI->connect('dbi:SQLite:dbname=' . DATABASE, undef, undef, { RaiseError => 1, AutoCommit => 1,synchronous => 0, locking_mode => 'EXCLUSIVE' });
 $dbh->do('PRAGMA cache_size = -65536');	# 64MB
 $dbh->do('PRAGMA journal_mode = OFF');
 
-$dbh->do('CREATE TABLE kfhs(cd CHAR(4), type VARCHAR, church VARCHAR, name1 VARCHAR, name2 VARCHAR, date VARCHAR, age CHAR(5), abode VARCHAR)');
+$dbh->do('CREATE TABLE kfhs(cd NUMBER, type VARCHAR, church VARCHAR, name1 VARCHAR, name2 VARCHAR, date VARCHAR, age CHAR(5), abode VARCHAR)');
 
 if(open(my $pin, '-|', './Cantbap')) {
 	my $sth = $dbh->prepare('INSERT INTO kfhs(cd, type, church, name1, date) VALUES(?, ?, ?, ?, ?)');
@@ -24,7 +26,7 @@ if(open(my $pin, '-|', './Cantbap')) {
 			$parents = 'NULL';
 		}
 		# print "$entry->$name\n";
-		$sth->execute('CD17', 'baptism', $church, $name, $date);
+		$sth->execute(17, 'baptism', $church, $name, $date);
 	}
 	close $pin;
 }
@@ -35,7 +37,7 @@ if(open(my $pin, '-|', './cantbans')) {
 		chomp $line;
 		my ($entry, $name1, $date, $name2, $church) = split(/, /, $line);
 		# print "$entry->$name\n";
-		$sth->execute('CD17', 'banns', $church, $name1, $name2, $date);
+		$sth->execute(17, 'banns', $church, $name1, $name2, $date);
 	}
 	close $pin;
 }
@@ -46,7 +48,7 @@ if(open(my $pin, '-|', './cantmar')) {
 		chomp $line;
 		my ($entry, $name1, $name2, $date, $church) = split(/, /, $line);
 		# print "$entry->$name1\n";
-		$sth->execute('CD17', 'marriage', $church, $name1, $name2, $date);
+		$sth->execute(17, 'marriage', $church, $name1, $name2, $date);
 	}
 	close $pin;
 }
@@ -63,7 +65,7 @@ if(open(my $pin, '-|', './cantbur')) {
 			$abode = 'NULL';
 		}
 		# print "$entry->$name\n";
-		$sth->execute('CD17', 'baptism', $church, $name1, $age, $date);
+		$sth->execute(17, 'baptism', $church, $name1, $age, $date);
 	}
 	close $pin;
 }
